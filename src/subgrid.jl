@@ -305,7 +305,7 @@ function subgrid_collapse(catalog::SubgridCatalog{T},
         show_progress = true) where T
     println("Starting collapse...")
     #catalog = copy_output(catalog)
-    box = Box(box_size, 8.)
+    box = Box(box_size, maximum([8., params[1]]))
     cl = CellList(catalog.pos, box)
     catalog.collapse_radius = params[1]
     catalog.collapse_frac = params[3]
@@ -313,7 +313,7 @@ function subgrid_collapse(catalog::SubgridCatalog{T},
     CellListMap.map_pairwise!((x, y, i, j, d2, catalog) -> inner_collapse_dm_dm!(x, y, i, j, d2, catalog),
                               catalog, box, cl, parallel=false, show_progress=show_progress)
     println("First collapse done")
-    box = Box(box_size, 8.)
+    box = Box(box_size, maximum([8., params[2]]))
     cl = CellList(catalog.pos, box)
     catalog.collapse_radius = params[2]
     catalog.collapse_frac = params[4]
