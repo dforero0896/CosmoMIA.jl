@@ -1,5 +1,3 @@
-using Parameters
-using HypergeometricFunctions
 
 function ∂χ_flat_LCDM(z, H0, Ω_Λ, Ω_m, speed_of_light = 299792.458)
     H = H0 * √(Ω_Λ + Ω_m * (1 + z)^3)
@@ -123,11 +121,11 @@ function growth_rate_approx(c::Cosmology, z; order = 1)
     end #if
 
 end #func
-function growth_rate_approx(c::Cosmology, z)
-    # Eq. 11a/b https://ui.adsabs.harvard.edu/abs/1991MNRAS.251..128L/abstract
-    Ω = c.Ω_m₀ * E(c, z)^-2 * (1 + z)^3
-    Ω^(5. / 9)
-end #func
+#function growth_rate_approx(c::Cosmology, z)
+#    # Eq. 11a/b https://ui.adsabs.harvard.edu/abs/1991MNRAS.251..128L/abstract
+#    Ω = c.Ω_m₀ * E(c, z)^-2 * (1 + z)^3
+#    Ω^(5. / 9)
+#end #func
 function growth_factor_approx(cosmo::Cosmology, z)
     a = 1. / 3
     b = 1.

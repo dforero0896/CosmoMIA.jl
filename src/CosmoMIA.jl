@@ -1,3 +1,5 @@
+module CosmoMIA
+using Printf
 using Parameters
 using HypergeometricFunctions
 using CellListMap.PeriodicSystems
@@ -16,10 +18,12 @@ using Optim
 using FFTW
 
 
-module CosmoMIA
+
 include("cosmo.jl")
 include("subgrid.jl")
 include("utils.jl")
+
+
 
 # Write your package code here.
 

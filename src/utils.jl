@@ -1,13 +1,9 @@
 
 FFTW.set_num_threads(32)
-theme(:dao)
-ENV["GKSwstype"]="nul"
 #ENV["LIBPOWSPEC_PATH"]="/home/users/d/dforeros/codes/libpowspec"
 #using Powspec
 ENV["OMP_NUM_THREADS"] = "32"
-gr()
-include("cosmo.jl")
-include("bispec_wrap.jl")
+
 
 
 function check_in_cell(x, y, z, ii, jj, kk, box_size, n_grid)
@@ -370,7 +366,7 @@ function σ(x::T) where T
     one(T) / (one(T) + exp(-x))
 end #func
 
-function smooth!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real
+function vel_kernel!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real
 
     if fft_plan == nothing
         fft_plan = plan_rfft(field)
