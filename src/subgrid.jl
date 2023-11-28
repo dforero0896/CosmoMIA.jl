@@ -96,7 +96,22 @@ function copy(cat::SubgridCatalog{T}) where T
                                   cat.collapse_frac,
                                   cat.collapse_radius))...)
 end #func
-
+function copy!(target_cat::CT, source_cat::CT) where {CT, T}
+    println("Copying SubgridCatalog in place")
+    target_cat.pos .= source_cat.pos
+    target_cat.vel .= source_cat.vel
+    target_cat.is_dm .= source_cat.is_dm
+    target_cat.collapse_to_idx .= source_cat.collapse_to_idx
+    target_cat.dweb .= source_cat.dweb
+    target_cat.δ_dm .= source_cat.δ_dm
+    target_cat.r_min = source_cat.r_min
+    target_cat.δ_max = source_cat.δ_max
+    target_cat.is_attractor .= source_cat.is_attractor
+    target_cat.γ_par = source_cat.γ_par
+    target_cat.collapse_frac = source_cat.collapse_frac
+    target_cat.collapse_radius = source_cat.collapse_radius
+    target_cat
+end #func
 function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT, 3}, box_size, box_min, dm_cw_type, dm_dens, displacement, velocities, dist; debug=false) where IT <: Unsigned
     println("Assigning DM to galaxies...")
     grid_size = size(target_ncount)
@@ -235,7 +250,7 @@ end #func
 is_attractor_fun(is_dm, cw_type) = (cw_type < 4) && is_dm
 
 function inner_collapse_dm_dm!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::SubgridCatalog{T}) where T<:Real
-    if catalog.collapse_radius > sqrt(d2)
+    if sqrt(d2) > catalog.collapse_radius 
         return catalog
     end #if
     if ((catalog.is_attractor[cen_id] &&
@@ -262,7 +277,7 @@ end #func
 
 
 function inner_collapse_ran_dm!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::SubgridCatalog{T}) where T<:Real
-    if catalog.collapse_radius > sqrt(d2)
+    if sqrt(d2) > catalog.collapse_radius 
         return catalog
     end #if
     if ((catalog.is_attractor[cen_id] && 
