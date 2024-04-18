@@ -96,7 +96,7 @@ function copy(cat::SubgridCatalog{T}) where T
                                   cat.collapse_frac,
                                   cat.collapse_radius))...)
 end #func
-function copy!(target_cat::CT, source_cat::CT) where {CT, T}
+function copy!(target_cat::CT, source_cat::CT) where CT
     println("Copying SubgridCatalog in place")
     target_cat.pos .= source_cat.pos
     target_cat.vel .= source_cat.vel
@@ -138,6 +138,7 @@ function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT,
     δ_dm = Vector{eltype(dm_dens)}()
     used_dm = 0
     sampled_new = 0
+    sampled_lag = 0
 
     for I = CartesianIndices(target_ncount)
         number_cen_in_cell = target_ncount[I]
@@ -176,7 +177,7 @@ function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT,
                         new_disp = displacement[ax][dm_particles_in_cell[missing_counter]]
                         new_pos[ax] = (lag_pos[ax] + new_disp + box_size[ax]) % box_size[ax]
                     end #for
-                    
+                    sampled_lag += 1
                 else
                     for ax = 1:3
                         draw = rand(Uniform(-1, 1))
@@ -185,7 +186,6 @@ function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT,
                     sampled_new += 1
                 end #if
                 push!(pos, SVector{3}(new_pos))
-                sampled_new += 1
                 push!(is_dm, false)
             end #if
             push!(dweb, dm_cw_type[I])
@@ -195,8 +195,8 @@ function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT,
         end #for
     end #for
     println("Used ", used_dm, " DM particles")
-    println("Sampled ", sampled_new, " particles")
-    println("Sampled ", round(100 * sampled_new / (used_dm + sampled_new)), "% of target_ncount")
+    println("Sampled ", sampled_new + sampled_lag, " particles")
+    println("Sampled ", round(100 * (sampled_new + sampled_lag) / (used_dm + sampled_new + sampled_lag)), "% of target_ncount")
     r_min = fill!(similar(δ_dm), +Inf)
     δ_max = fill!(similar(δ_dm), -Inf)
     collapse_to_idx = fill!(Vector{UInt32}(undef, size(δ_max,1)), 0)
@@ -283,7 +283,7 @@ function inner_collapse_ran_dm!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::S
     if ((catalog.is_attractor[cen_id] && 
         !catalog.is_attractor[sat_id]) && 
         (d2 > 1e-4))
-        if d2 < catalog.r_min[sat_id] || catalog.δ_max[sat_id] < catalog.δ_dm[cen_id]
+        if (d2 < catalog.r_min[sat_id]) || (catalog.δ_max[sat_id] < catalog.δ_dm[cen_id])
             catalog = collapse!(sat_pos, cen_pos, sat_id, cen_id, d2, catalog)
             #catalog.collapse_to_idx[sat_id] = UInt32(cen_id)
             catalog.r_min[sat_id] = d2
@@ -292,7 +292,7 @@ function inner_collapse_ran_dm!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::S
     elseif ((catalog.is_attractor[sat_id] && 
             !catalog.is_attractor[cen_id]) && 
             (d2 > 1e-4))
-            if d2 < catalog.r_min[cen_id] || catalog.δ_max[cen_id] < catalog.δ_dm[sat_id]
+            if (d2 < catalog.r_min[cen_id]) || (catalog.δ_max[cen_id] < catalog.δ_dm[sat_id])
                 catalog = collapse!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog)
                 #catalog.collapse_to_idx[sat_id] = UInt32(cen_id)
                 catalog.r_min[cen_id] = d2
