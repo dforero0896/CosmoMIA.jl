@@ -26,3 +26,17 @@ archivePrefix = {arXiv},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```
+## Usage
+The `examples/cosmoMIA_run.jl` directory contains a full example of how to run the code in fitting and production mode, however it should not be run under the `CosmoMIA` project in order to avoid burdening the package with extra dependencies. To use the code you should first
+```julia
+pkg> add https://github.com/dforero0896/CosmoCorr.jl.git
+pkg> add https://github.com/dforero0896/CosmoMIA.jl.git#script
+```
+which should install the required dependencies in your designed project directory. After, trying to run `examples/cosmoMIA_run.jl` will prompt you to download the extra dependencies (i.e. for plotting).
+The code needs, in principle, the results of a cosmological simulation, which we take to be the final dark matter particle positions, Eulerian velocities, displacement fields, dark matter overdensity field and cosmic web (Tweb) classification. The example is set to receive a target catalog and compute the target clustering, but it could be modified to accept some target clustering instead, just make sure the binning matches.
+
+
+## Acknowledgements
+This project was developed within the Cosmic Signal project at Instituto de Astrofísica de Canarias. Thanks to the IAC and EPFL for their support.
+Thanks to Catalina Ariza for designing the logo.
+And thanks to Mia herself for the inspiration.
