@@ -205,11 +205,114 @@ function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT,
     SubgridCatalog(reduce(hcat, pos), reduce(hcat,vel), is_dm, dweb, δ_dm, r_min, δ_max, is_attractor_fun.(is_dm, dweb), 0f0, 1f0)
 end #func
 
-
 assign_particles_to_gals(alpt_storage::ALPTResult{T}, 
                          target_ncount::AbstractArray{IT, 3}, 
                          box_size, box_min, dist; debug=false
                          ) where {T<:Real, IT<:Unsigned} = assign_particles_to_gals(alpt_storage.pos, 
+                                                              target_ncount, 
+                                                              box_size, 
+                                                              box_min, 
+                                                              alpt_storage.dweb_field, 
+                                                              alpt_storage.delta_field, 
+                                                              alpt_storage.disp_field, 
+                                                              alpt_storage.vel_field, 
+                                                              dist; debug=debug)
+
+
+function assign_particles_to_centrals(dm_particles, target_ncount::AbstractArray{IT, 3}, box_size, box_min, dm_cw_type, dm_dens, displacement, velocities, dist; debug=false) where IT <: Unsigned
+    println("Assigning DM to galaxies...")
+    grid_size = size(target_ncount)
+    bin_size = box_size ./ grid_size
+    dm_per_cell = [Vector{UInt32}() for _ = 1:prod(grid_size)]
+    LI = LinearIndices(target_ncount)
+    if debug
+        number_dm = zero(target_ncount)
+    end #if
+    @inbounds for ii = eachindex(dm_particles[1])
+        i = wrap_indices(1 + Int(floor(grid_size[1] * dm_particles[1][ii] / box_size[1])), grid_size[1])
+        j = wrap_indices(1 + Int(floor(grid_size[2] * dm_particles[2][ii] / box_size[2])), grid_size[2])
+        k = wrap_indices(1 + Int(floor(grid_size[3] * dm_particles[3][ii] / box_size[3])), grid_size[3])
+        index_3d = LI[i, j, k]
+        push!(dm_per_cell[index_3d], ii)
+        if debug
+            number_dm[i, j, k] += 1
+        end #if
+    end #for
+    pos = Vector{SVector{3,eltype(dm_particles[1])}}()
+    vel = Vector{SVector{3,eltype(velocities[1])}}()
+    is_dm = BitVector()
+    dweb = Vector{eltype(dm_cw_type)}()
+    δ_dm = Vector{eltype(dm_dens)}()
+    used_dm = 0
+    sampled_new = 0
+
+    for I = CartesianIndices(target_ncount)
+        number_cen_in_cell = target_ncount[I]
+        if number_cen_in_cell === zero(typeof(number_cen_in_cell))
+            continue
+        end #if
+        TI = Tuple(I)
+        grid_center = [(i - 0.5) * bin_size[1] for i = TI]
+        L = LI[I]
+        L_C = ((TI[3] - 1) + grid_size[3] * ((TI[2] - 1) + grid_size[2] * (TI[1] - 1))) + 1
+        dm_particles_in_cell = dm_per_cell[L]
+        number_dm_in_cell = length(dm_particles_in_cell)
+        if debug
+            @assert number_dm_in_cell == number_dm[I]
+        end #if
+
+        missing_counter = 0
+        for par = 1:number_cen_in_cell
+            if par <= number_dm_in_cell
+                push!(pos, @SVector [dm_particles[ax][dm_particles_in_cell[par]] for ax = 1:3])
+                push!(is_dm, true)
+                used_dm += 1
+            else
+                missing_counter = par - number_dm_in_cell
+                new_pos = Vector{eltype(dm_particles[1])}(undef, 3)
+                
+                if number_dm_in_cell > 0
+                    for ax = 1:3
+                        missing_counter = missing_counter > number_dm_in_cell ? rand(1:number_dm_in_cell) : missing_counter
+                        gc = (missing_counter <= number_dm_in_cell) ? dm_particles[ax][dm_particles_in_cell[missing_counter]] : grid_center[ax]
+                        gc -= displacement[ax][dm_particles_in_cell[missing_counter]]
+                        gc_new = gc + rand(dist)
+                        gc_new += displacement[ax][dm_particles_in_cell[missing_counter]] + box_size[ax]
+                        new_pos[ax] = gc_new % box_size[ax]
+                    end #for
+                else
+                    new_pos = move_centers(TI..., dm_dens, box_size, bin_size[1])
+                    for ax = 1:3
+                        new_pos[ax] += rand(dist) + box_size[ax]
+                        new_pos[ax] %= box_size[ax]
+                    end #for    
+                end #if
+                push!(pos, SVector{3}(new_pos))
+                sampled_new += 1
+                push!(is_dm, false)
+            end #if
+            push!(dweb, dm_cw_type[I])
+            push!(δ_dm, read_cic(dm_dens, pos[end], box_size, box_min; wrap = true))
+            #push!(vel, @SVector [velocities[ax][I] for ax = 1:3])
+            push!(vel, @SVector [read_cic(velocities[ax], pos[end], box_size, box_min; wrap = true) for ax = 1:3])
+        end #for
+    end #for
+    @show pos[100]
+    println("Used ", used_dm, " DM particles")
+    println("Sampled ", sampled_new, " particles")
+    println("Sampled ", round(100 * sampled_new / (used_dm + sampled_new)), "% of target_ncount")
+    r_min = fill!(similar(δ_dm), +Inf)
+    δ_max = fill!(similar(δ_dm), -Inf)
+    SubgridCatalog(reduce(hcat, pos), reduce(hcat,vel), is_dm, dweb, δ_dm, r_min, δ_max, is_attractor_fun.(is_dm, dweb), 0f0, 1f0)
+end #func
+
+
+
+
+assign_particles_to_centrals(alpt_storage::ALPTResult{T}, 
+                         target_ncount::AbstractArray{IT, 3}, 
+                         box_size, box_min, dist; debug=false
+                         ) where {T<:Real, IT<:Unsigned} = assign_particles_to_centrals(alpt_storage.pos, 
                                                               target_ncount, 
                                                               box_size, 
                                                               box_min, 

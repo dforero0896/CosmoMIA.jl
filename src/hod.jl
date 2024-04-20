@@ -13,3 +13,11 @@ This file will contain an HOD inspired method for assigning random particles and
     Fit HOD?
 
     =#
+
+
+@inline function cic_weights(ddx, ddy, ddz, ii, jj, kk)
+    (((1 - ddx) + ii * (-1 + 2 * ddx)) * 
+    ((1 - ddy) + jj * (-1 + 2 * ddy)) *
+    ((1 - ddz) + kk * (-1 + 2 * ddz)))
+end #func
+

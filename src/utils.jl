@@ -332,6 +332,50 @@ function read_cic(field::AbstractArray{T,3}, position::AbstractVector{T}, box_si
              field[index_u_x, index_u_y, index_u_z] * ux * uy * uz
     output
 end #func
+
+
+function move_centers(ix, iy, iz, field::AbstractArray{T,3}, box_size, step_size) where T <: Real
+    grid_size = size(field)
+    bin_size = map(T, box_size ./ grid_size)
+    xpos = (ix - 0.5) * bin_size[1]
+    ypos = (iy - 0.5) * bin_size[2]
+    zpos = (iz - 0.5) * bin_size[3]
+    dx = [-1, 1]
+    new_xpos = xpos
+    new_ypos = 0
+    new_zpos = 0
+    
+    wt = 0
+    grad = 0
+    for i = dx
+       grad += i * field[wrap_indices(ix + i, grid_size[1]), 
+                          wrap_indices(iy, grid_size[2]), 
+                          wrap_indices(iz, grid_size[3])]
+    end
+
+    xpos += grad / (2 * bin_size[1])
+
+    grad = 0
+    for i = dx
+       grad += i * field[wrap_indices(ix, grid_size[1]), 
+                          wrap_indices(iy + i, grid_size[2]), 
+                          wrap_indices(iz, grid_size[3])]
+    end
+    ypos += step_size * grad / (2 * bin_size[2])
+
+    grad = 0
+    for i = dx
+       grad += i * field[wrap_indices(ix, grid_size[1]), 
+                          wrap_indices(iy, grid_size[2]), 
+                          wrap_indices(iz + i, grid_size[3])]
+    end
+    zpos += step_size * grad / (2 * bin_size[3])
+
+                
+    [xpos, ypos, zpos]
+end #func
+
+
 function renormalize_alpt_vel!(vels, cosmo, z)
     println("Renormalizing velocities")
     hconst  = 1  #Will be cancelled
@@ -371,6 +415,7 @@ function vel_kernel!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::
     if fft_plan == nothing
         fft_plan = plan_rfft(field)
     end #if
+    
     field_k = fft_plan * field
     k⃗ = k_vec(field, box_size)
     @inbounds Threads.@threads for I in CartesianIndices(field_k)
@@ -394,7 +439,6 @@ function new_smooth!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::
         k² = k⃗[1][I[1]]^2 + k⃗[2][I[2]]^2 + k⃗[3][I[3]]^2
         field_k[I] *= (1 + smoothing_radius * k²)
         #field_k[I] *= exp(0.5 * smoothing_radius^2 * k²)
-        
     end #for
     ldiv!(field, fft_plan, field_k)
     field
