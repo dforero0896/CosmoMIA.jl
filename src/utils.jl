@@ -51,7 +51,11 @@ end
 
 # Function that accumulates the histogram of distances
 function build_histogram!(d2,hist, bin_edges)
-    ibin = searchsortedlast(bin_edges, sqrt(d2))
+    r = sqrt(d2)
+    if r > bin_edges[end]
+        return hist
+    end #if
+    ibin = searchsortedlast(bin_edges, r)
     #ibin = floor(Int,d) + 1
     if (ibin > 0) & (ibin < length(bin_edges))
         hist[ibin] += 1
@@ -115,6 +119,61 @@ function compute_2pcf(x1, y1, z1, x2, y2, z2, box_size, bin_edges)
     centers = bin_edges[1:end-1] .+ 0.5 .* diff(bin_edges)
     centers, hist
 end #func
+
+function compute_sep_histogram(catalog, box_size, bin_edges)
+    sides = [eltype(catalog)(b) for b in box_size]
+    #cutoff = box_size[1] / size(counts_ref, 1)
+    cutoff = eltype(catalog)(bin_edges[end] < 10f0 ? 10f0 : bin_edges[end])
+    box = Box(sides, cutoff)
+    
+    cl = CellList(catalog, box)
+    
+    # Initialize (and preallocate) the histogram
+    hist = zeros(Int,size(bin_edges,1)-1);
+    println("Counting pairs...")
+    # Run calculation
+    CellListMap.map_pairwise!(
+        (_,_,_,_,d2,hist) -> build_histogram!(d2,hist, bin_edges),
+        hist,box,cl; show_progress = true, parallel = true
+    )
+    
+    N = size(catalog,2)
+    #norm = 4 * pi .*  (bin_edges[2:end].^3 .- bin_edges[1:end-1].^3) ./ (box_size[1] * box_size[2] * box_size[3] * 3)
+    #hist = hist  / (N * (N - 1) / 2) ./ norm
+    hist
+end #
+
+compute_sep_histogram(x, y, z, box_size, bin_edges) = compute_sep_histogram(Matrix(hcat(x,y,z)'), box_size, bin_edges)
+
+function sample_histogram(bin_edges, hist)
+    weights = Weights(hist)
+    bin_id = sample(weights)
+    min_bin = log10(bin_edges[bin_id])
+    max_bin = log10(bin_edges[bin_id + 1])
+    10^(rand() * (max_bin - min_bin) + min_bin)
+end #func
+
+
+struct HistSampler <: Sampleable{Univariate, Continuous} 
+    hist
+    edges
+end #struct
+function Base.rand(rng::AbstractRNG, s::HistSampler)
+    sample_histogram(s.edges, s.hist)
+end #func
+
+
+#function sample_histogram(bin_edges, bin_ids, weights)
+#    sample(bin_ids, weights)
+#    bin_id = sample(weights)
+#    @show bin_id
+#    min_bin = bin_edges[bin_id]
+#    max_bin = bin_edges[bin_id + 1]
+#    Uniform(min_bin, max_bin)
+#end #func
+
+
+
 @inline function wrap_indices(index, ngrid)
     if index > ngrid
         return index - ngrid
@@ -410,7 +469,7 @@ function σ(x::T) where T
     one(T) / (one(T) + exp(-x))
 end #func
 
-function vel_kernel!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real
+function vel_kernel!(field::AbstractArray{T, 3}, smoothing_radius::T, scale::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real
 
     if fft_plan == nothing
         fft_plan = plan_rfft(field)
@@ -422,11 +481,14 @@ function vel_kernel!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::
         k² = k⃗[1][I[1]]^2 + k⃗[2][I[2]]^2 + k⃗[3][I[3]]^2
         #field_k[I] *= exp(-0.5 * smoothing_radius^2 * k²)
         #field_k[I] *= exp(0.5 * smoothing_radius^2 * k²)
-        field_k[I] *= 1 + σ(0.6) * smoothing_radius * k²
+        field_k[I] *= 1 + σ(scale) * smoothing_radius * k²
     end #for
     ldiv!(field, fft_plan, field_k)
     field
 end #func
+
+
+vel_kernel!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real = vel_kernel!(field, smoothing_radius, T(0.6), box_size; fft_plan = fft_plan)
 
 function new_smooth!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real
 
@@ -437,8 +499,8 @@ function new_smooth!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::
     k⃗ = k_vec(field, box_size)
     @inbounds Threads.@threads for I in CartesianIndices(field_k)
         k² = k⃗[1][I[1]]^2 + k⃗[2][I[2]]^2 + k⃗[3][I[3]]^2
-        field_k[I] *= (1 + smoothing_radius * k²)
-        #field_k[I] *= exp(0.5 * smoothing_radius^2 * k²)
+        #field_k[I] *= (1 + smoothing_radius * k²)
+        field_k[I] *= exp(0.5 * smoothing_radius^2 * k²)
     end #for
     ldiv!(field, fft_plan, field_k)
     field

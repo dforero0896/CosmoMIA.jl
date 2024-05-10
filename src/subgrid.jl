@@ -81,6 +81,7 @@ mutable struct SubgridCatalog{T}
     is_attractor::BitVector
     γ_par
     collapse_frac
+    collapse_radius
 end #struct
 
 
@@ -91,7 +92,8 @@ function PeriodicSystems.copy_output(cat::SubgridCatalog{T}) where T
                                   cat.δ_dm, cat.r_min, 
                                   cat.δ_max, cat.is_attractor,
                                   cat.γ_par,
-                                  cat.collapse_frac))...)
+                                  cat.collapse_frac,
+                                  cat.collapse_radius))...)
 end #func
 function PeriodicSystems.reset_output!(cat::SubgridCatalog)
     #println("Resetting SubridCatalog")
@@ -202,7 +204,7 @@ function assign_particles_to_gals(dm_particles, target_ncount::AbstractArray{IT,
     println("Sampled ", round(100 * sampled_new / (used_dm + sampled_new)), "% of target_ncount")
     r_min = fill!(similar(δ_dm), +Inf)
     δ_max = fill!(similar(δ_dm), -Inf)
-    SubgridCatalog(reduce(hcat, pos), reduce(hcat,vel), is_dm, dweb, δ_dm, r_min, δ_max, is_attractor_fun.(is_dm, dweb), 0f0, 1f0)
+    SubgridCatalog(reduce(hcat, pos), reduce(hcat,vel), is_dm, dweb, δ_dm, r_min, δ_max, is_attractor_fun.(is_dm, dweb), 0f0, 1f0, 15f0)
 end #func
 
 assign_particles_to_gals(alpt_storage::ALPTResult{T}, 
@@ -271,19 +273,27 @@ function assign_particles_to_centrals(dm_particles, target_ncount::AbstractArray
                 missing_counter = par - number_dm_in_cell
                 new_pos = Vector{eltype(dm_particles[1])}(undef, 3)
                 
-                if number_dm_in_cell > 0
+                if false #number_dm_in_cell > 0
+                    missing_counter = missing_counter > number_dm_in_cell ? rand(1:number_dm_in_cell) : missing_counter
+                    sampled_r = rand(dist)
+                    coords = randn(3)
+                    coords .*= sampled_r / norm(coords)
+                    
                     for ax = 1:3
-                        missing_counter = missing_counter > number_dm_in_cell ? rand(1:number_dm_in_cell) : missing_counter
+                        
                         gc = (missing_counter <= number_dm_in_cell) ? dm_particles[ax][dm_particles_in_cell[missing_counter]] : grid_center[ax]
                         gc -= displacement[ax][dm_particles_in_cell[missing_counter]]
-                        gc_new = gc + rand(dist)
+                        gc_new = gc + coords[ax]
                         gc_new += displacement[ax][dm_particles_in_cell[missing_counter]] + box_size[ax]
                         new_pos[ax] = gc_new % box_size[ax]
                     end #for
                 else
-                    new_pos = move_centers(TI..., dm_dens, box_size, bin_size[1])
+                    new_pos = move_centers(TI..., dm_dens, box_size, 1. * bin_size[1])
+                    sampled_r = rand(dist)
+                    coords = randn(3)
+                    coords .*= sampled_r / norm(coords)
                     for ax = 1:3
-                        new_pos[ax] += rand(dist) + box_size[ax]
+                        new_pos[ax] += coords[ax] + box_size[ax]
                         new_pos[ax] %= box_size[ax]
                     end #for    
                 end #if
@@ -303,7 +313,7 @@ function assign_particles_to_centrals(dm_particles, target_ncount::AbstractArray
     println("Sampled ", round(100 * sampled_new / (used_dm + sampled_new)), "% of target_ncount")
     r_min = fill!(similar(δ_dm), +Inf)
     δ_max = fill!(similar(δ_dm), -Inf)
-    SubgridCatalog(reduce(hcat, pos), reduce(hcat,vel), is_dm, dweb, δ_dm, r_min, δ_max, is_attractor_fun.(is_dm, dweb), 0f0, 1f0)
+    SubgridCatalog(reduce(hcat, pos), reduce(hcat,vel), is_dm, dweb, δ_dm, r_min, δ_max, is_attractor_fun.(is_dm, dweb), 0f0, 1f0, 15f0)
 end #func
 
 
@@ -367,62 +377,57 @@ end #func
 is_attractor_fun(is_dm, cw_type) = (cw_type < 4) && is_dm
 
 function inner_collapse_dm_dm!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::SubgridCatalog{T}) where T<:Real
+    if sqrt(d2) > catalog.collapse_radius 
+        return catalog
+    end #if
     if ((catalog.is_attractor[cen_id] &&
         (catalog.is_dm[sat_id])) && 
         (sat_id != cen_id) && 
         (d2 > 1e-4))
         if d2 < catalog.r_min[sat_id]
             catalog = collapse!(sat_pos, cen_pos, sat_id, cen_id, d2, catalog::SubgridCatalog{T})
+            #catalog.collapse_to_idx[sat_id] = UInt32(cen_id)
             catalog.r_min[sat_id] = d2
         end #if
+    elseif ((catalog.is_attractor[sat_id] &&
+            (catalog.is_dm[cen_id])) && 
+            (sat_id != cen_id) && 
+            (d2 > 1e-4))
+            if d2 < catalog.r_min[cen_id]
+                catalog = collapse!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::SubgridCatalog{T})
+                #catalog.collapse_to_idx[sat_id] = UInt32(cen_id)
+                catalog.r_min[cen_id] = d2
+            end #if
     end #if
     catalog
 end #func
 
 
 function inner_collapse_ran_dm!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog::SubgridCatalog{T}) where T<:Real
+    if sqrt(d2) > catalog.collapse_radius 
+        return catalog
+    end #if
     if ((catalog.is_attractor[cen_id] && 
         !catalog.is_attractor[sat_id]) && 
         (d2 > 1e-4))
-        if d2 < catalog.r_min[sat_id] || catalog.δ_max[sat_id] < catalog.δ_dm[cen_id]
+        if (d2 < catalog.r_min[sat_id]) || (catalog.δ_max[sat_id] < catalog.δ_dm[cen_id])
             catalog = collapse!(sat_pos, cen_pos, sat_id, cen_id, d2, catalog)
+            #catalog.collapse_to_idx[sat_id] = UInt32(cen_id)
             catalog.r_min[sat_id] = d2
             catalog.δ_max[sat_id] = catalog.δ_dm[cen_id]
         end #if
+    elseif ((catalog.is_attractor[sat_id] && 
+            !catalog.is_attractor[cen_id]) && 
+            (d2 > 1e-4))
+            if (d2 < catalog.r_min[cen_id]) || (catalog.δ_max[cen_id] < catalog.δ_dm[sat_id])
+                catalog = collapse!(cen_pos, sat_pos, cen_id, sat_id, d2, catalog)
+                #catalog.collapse_to_idx[sat_id] = UInt32(cen_id)
+                catalog.r_min[cen_id] = d2
+                catalog.δ_max[cen_id] = catalog.δ_dm[sat_id]
+            end #if
+            
     end #if
     catalog
-end #func
-
-function subgrid_collapse(catalog::SubgridCatalog{T},
-                          params::AbstractVector,
-                          system) where T
-    system = setup_periodicsystem(catalog, box_size)
-    println("Starting collapse...")
-    system.parallel = false
-    catalog = copy_output(catalog)
-    system.output = catalog
-    update_cutoff!(system, params[1])
-    catalog.collapse_frac = params[3]
-    println("Setting dm-attractor collapse radius to ", params[1], " ", system.cutoff)
-    println("Setting dm-attractor collapse factor to ", params[3], " ", catalog.collapse_frac)
-    catalog.γ_par = params[end]
-    PeriodicSystems.map_pairwise!((x, y, i, j, d2, catalog) -> inner_collapse_dm_dm!(x, y, i, j, d2, catalog), system)
-    println("Updating positions...")
-    Threads.@threads for i = 1:size(catalog.pos,2)
-        system.xpositions[i] = SVector{3,T}(catalog.pos[1:3, i])
-        system.ypositions[i] = SVector{3,T}(catalog.pos[1:3, i])
-        catalog.r_min[i] = +Inf
-        catalog.δ_max[i] = -Inf
-    end #for
-    update_cutoff!(system, params[2])
-    catalog.collapse_frac = params[4]
-    println("Setting attractor-!attractor collapse radius to ", params[2], " ", system.cutoff)
-    println("Setting attractor-!attractor collapse factor to ", params[4], " ", catalog.collapse_frac)
-    PeriodicSystems.map_pairwise!((x, y, i, j, d2, catalog) -> inner_collapse_ran_dm!(x, y, i, j, d2, catalog), system;
-                  update_lists = true)
-
-    system.collapsed_catalog
-
 end #func
 
 function subgrid_collapse(catalog::SubgridCatalog{T},
@@ -431,15 +436,17 @@ function subgrid_collapse(catalog::SubgridCatalog{T},
         show_progress = true) where T
     println("Starting collapse...")
     #catalog = copy_output(catalog)
-    box = Box(box_size, params[1])
-    cl = CellList(catalog.pos, catalog.pos, box)
+    box = Box(box_size, maximum([8., params[1]]))
+    cl = CellList(catalog.pos, box)
+    catalog.collapse_radius = params[1]
     catalog.collapse_frac = params[3]
     catalog.γ_par = params[end]
     CellListMap.map_pairwise!((x, y, i, j, d2, catalog) -> inner_collapse_dm_dm!(x, y, i, j, d2, catalog),
                               catalog, box, cl, parallel=false, show_progress=show_progress)
     println("First collapse done")
-    box = Box(box_size, params[2])
-    cl = CellList(catalog.pos, catalog.pos, box)
+    box = Box(box_size, maximum([8., params[2]]))
+    cl = CellList(catalog.pos, box)
+    catalog.collapse_radius = params[2]
     catalog.collapse_frac = params[4]
     CellListMap.map_pairwise!((x, y, i, j, d2, catalog) -> inner_collapse_ran_dm!(x, y, i, j, d2, catalog),
                                catalog, box, cl, parallel=false, show_progress=show_progress)
