@@ -443,3 +443,20 @@ function new_smooth!(field::AbstractArray{T, 3}, smoothing_radius::T, box_size::
     ldiv!(field, fft_plan, field_k)
     field
 end #func
+
+function filter_displacement!(field::AbstractArray{T, 3}, smoothing_radius::T, step_size::T, box_size::AbstractVector; fft_plan = nothing) where T <: Real
+    if fft_plan == nothing
+        fft_plan = plan_rfft(field)
+    end #if
+    field_k = fft_plan * field
+    k⃗ = k_vec(field, box_size)
+    @inbounds Threads.@threads for I in CartesianIndices(field_k)
+        k² = k⃗[1][I[1]]^2 + k⃗[2][I[2]]^2 + k⃗[3][I[3]]^2
+        field_k[I] *= (1 - exp(0.5 * smoothing_radius^2 * k²))
+    end #for
+    ldiv!(field, fft_plan, field_k)
+    field
+end #func
+
+
+#function apply_displacement(pos::AbstractMatrix{T}, field::AbstractArray{T, 3})
